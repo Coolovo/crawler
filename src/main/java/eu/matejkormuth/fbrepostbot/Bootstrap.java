@@ -63,6 +63,7 @@ public class Bootstrap {
 
     private static final String MAIN_CONF = "main.conf";
     private static final String SEPARATOR = "->";
+    private static final String NO_TARGET = "NO_TARGET";
     private static final long DEFAULT_CHECK_INTERVAL = 5 * 60;
 
     private void shutdown() {
@@ -132,13 +133,27 @@ public class Bootstrap {
             throws IOException, FacebookException {
         for (String line : lines) {
             long sourcePageId = Long.valueOf(line.split(SEPARATOR)[0].trim());
-            long targetPageId = Long.valueOf(line.split(SEPARATOR)[1].trim());
 
-            // Load source page if not loaded.
-            initSourcePage(sourcePageId);
+            // Allow usage of NO_TARGET.
+            String target = line.split(SEPARATOR)[1].trim();
+            if (!target.equalsIgnoreCase(NO_TARGET)) {
+                // Create SourcePage as content producer and TargetPage as
+                // content consumer.
+                long targetPageId = Long.valueOf(target);
 
-            // Load target page if not loaded.
-            initTargetPage(filterMappings, targetPageId);
+                // Load source page if not loaded.
+                initSourcePage(sourcePageId);
+
+                // Load target page if not loaded.
+                initTargetPage(filterMappings, targetPageId);
+            } else {
+                // Create only SourcePage as for this mapping, user doesn't
+                // want to repost content from specified source page, only
+                // download it.
+
+                // Load source page if not loaded.
+                initSourcePage(sourcePageId);
+            }
         }
     }
 
@@ -243,22 +258,30 @@ public class Bootstrap {
             for (String line : lines) {
                 // {source-id} -> {target-page}
                 long sourcePageId = Long.valueOf(line.split(SEPARATOR)[0].trim());
-                long targetPageId = Long.valueOf(line.split(SEPARATOR)[1].trim());
 
-                // Check for cyclic mapping.
-                if (sourcePageId == targetPageId) {
-                    throw new IllegalStateException("Source page can't be the same page as target page!");
-                }
+                // Allow usage of NO_TARGET.
+                String target = line.split(SEPARATOR)[1].trim();
+                if (!target.equalsIgnoreCase(NO_TARGET)) {
+                    // This is regular facebook page id.
+                    long targetPageId = Long.valueOf(target);
 
-                // Add target page to targets set.
-                targetPageIds.add(targetPageId);
-                // Add to mapping.
-                if (filterMappings.containsKey(targetPageId)) {
-                    filterMappings.get(targetPageId).add(sourcePageId);
+                    // Check for cyclic mapping.
+                    if (sourcePageId == targetPageId) {
+                        throw new IllegalStateException("Source page can't be the same page as target page!");
+                    }
+
+                    // Add target page to targets set.
+                    targetPageIds.add(targetPageId);
+                    // Add to mapping.
+                    if (filterMappings.containsKey(targetPageId)) {
+                        filterMappings.get(targetPageId).add(sourcePageId);
+                    } else {
+                        Set<Long> set = new HashSet<>();
+                        set.add(sourcePageId);
+                        filterMappings.put(targetPageId, set);
+                    }
                 } else {
-                    Set<Long> set = new HashSet<>();
-                    set.add(sourcePageId);
-                    filterMappings.put(targetPageId, set);
+                    log.info("Found NO_TARGET mapping at line: {}", line);
                 }
             }
         } catch (Exception e) {
